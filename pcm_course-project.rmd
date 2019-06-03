@@ -1,0 +1,164 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Cliff Hayes"
+date: "6/2/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+***
+
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here:  
+http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har  
+(see the section on the Weight Lifting Exercise Dataset).  
+
+## Executive Summary
+This document describes my solution to the course project final for Coursera's Practical Machine Learning. The goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict how well they perform 20 test exercises.
+
+The following steps are taken to arrive at the predictions for the 20 test exercises:  
+(1) Ingest training data of 19622 observations using 160 variables  
+(2) Split the training data into a training set and testing set  
+(3) Clean training and testing sets  
+(4) Generate two models from the training set  
+(5) Using the two generated models, predict the results of the testing set  
+(6) Compare the resulting predictions for accuracy  
+(7) Apply the most accurate model to predict the performance of the 20 test exercises  
+
+## Load Required Libraries
+```{r load_libraries, message = FALSE}
+library(caret)
+library(doParallel)
+```
+
+## Load Training and Testing Data
+```{r load_data}
+rawTrain <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),header=TRUE)
+dim(rawTrain)
+rawTest <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),header=TRUE)
+dim(rawTest)
+```
+rawTrain is 19622 observations of 160 variables  
+rawTest is 20 observations of 160 variables  
+
+## Create and Clean Training & Validation Sets
+(1) Split rawTrain into trainSet and testSet  
+```{r cc_step1}
+inTrain  <- createDataPartition(rawTrain$classe, p=0.75, list=FALSE)
+trainSet <- rawTrain[inTrain, ]
+testSet  <- rawTrain[-inTrain, ]
+dim(trainSet)
+dim(testSet)
+```
+(2) Copy rawTest to validateSet  
+```{r cc_step2}
+validateSet <- rawTest
+```
+(3) Identify near zero variables in trainSet and validateSet  
+    near zero variables = variables with 95%+ same value  
+```{r cc_step3}
+nzvColsT <- nearZeroVar(trainSet, freqCut = 95/5)
+nzvColsV <- nearZeroVar(validateSet, freqCut = 95/5)
+```
+(4) Remove near zero variable columns from trainSet, testSet & validateSet  
+```{r cc_step4}
+nzv_trainSet <- trainSet[, -nzvColsT]
+nzv_testSet <- testSet[, -nzvColsT]
+nzv_validateSet <- validateSet[, -nzvColsV]
+dim(nzv_trainSet)
+dim(nzv_testSet)
+dim(nzv_validateSet)
+```
+(5) Identify variable columns with 95%+ NA in nzv_trainSet & nzv_validateSet
+```{r cc_step5}
+naColsT <- sapply(nzv_trainSet, function(x) mean(is.na(x))) > 0.95
+naColsV <- sapply(nzv_validateSet, function(x) mean(is.na(x))) > 0.95
+```
+(6) Remove identified colummns from nzv_trainSet, nzv_testSet & nzv_validateSet   
+```{r cc_step6}
+nzvna_trainSet <- nzv_trainSet[, naColsT==FALSE]
+nzvna_testSet <- nzv_testSet[, naColsT==FALSE]
+nzvna_validateSet <- nzv_validateSet[, naColsV==FALSE]
+dim(nzvna_trainSet)
+dim(nzvna_testSet)
+dim(nzvna_validateSet)
+```
+(7) Remove ID and timestamp variables  
+    The first 5 columns are X, username and timestamps  
+    We can remove these as they are non-predictive for modeling  
+```{r cc_step7}
+clean_trainSet <- nzvna_trainSet[, -(1:5)]
+clean_testSet <- nzvna_testSet[, -(1:5)]
+clean_validateSet <- nzvna_validateSet[, -(1:5)]
+dim(clean_trainSet)
+dim(clean_testSet)
+dim(clean_validateSet)
+```
+With all data sets now at 54 variables, we can proceed to modeling an predicting.  
+
+## Modeling & Predicting
+Set up parallel processing to decrease modeling time  
+```{r mp_enable_pp}
+cl <- makePSOCKcluster(4)
+registerDoParallel(cl)
+```
+### Model 1: gbm - Gradient Boosting Machine 
+(1) generate gbm model from clean_trainSet  
+```{r mp_gbm_step1, message = FALSE}
+set.seed(3101)
+modelGBM <- train(classe ~ ., method = "gbm", data = clean_trainSet, verbose = FALSE)
+```
+(2) view model results  
+```{r mp_gbm_step2}
+modelGBM$finalModel
+print(modelGBM)
+```
+This model is looking pretty good. Accuracy at depth 3 and 150 trees is ~98.4% 
+
+(3) predict classe of clean_testSet using modelGBM  
+```{r mp_gbm_step3}
+predictGBM <- predict(modelGBM, newdata = clean_testSet)
+```
+(4) check results of GBM prediction using confusion matrix  
+```{r mp_gbm_step4}
+conmatGBM <- confusionMatrix(predictGBM, clean_testSet$classe)
+conmatGBM
+```
+Accuracy of predictions on testSet is ~98.7%  
+
+### Model 2: rf - Random Forest  
+(1) generate rf model from clean_trainSet  
+```{r mp_rf_step1, message = FALSE}
+set.seed(3101)
+modelRF <- train(classe ~ ., method = "rf", data = clean_trainSet,
+                 trControl = trainControl(method="cv"), number=3)
+```
+(2) view model results
+```{r mp_rf_step2}
+modelRF$finalModel
+print(modelRF)
+```
+Estimated error rate is 0.18% and accuracy is reported as ~99.8%. That is quite high and might indicate overfitting to the training data. We'll see if we get close to this accuracy rate with the predictions on the test set.  
+
+(3) predict classe of clean_testSet using modelRF  
+```{r mp_rf_step3}
+predictRF <- predict(modelRF, newdata = clean_testSet)
+```
+(4) check results of RF prediction using confusion matrix  
+```{r mp_rf_step4}
+conmatRF <- confusionMatrix(predictRF, clean_testSet$classe)
+conmatRF
+```
+Accuracy of predictions on testSet is 99.8%. We'll use modelRF to predict the performance of the 20 test exercises for the final quiz. 
+
+(5) Stop parallel processing  
+```{r mp_rf_step5}
+stopCluster(cl)
+```
+## Apply RF model to clean_validateSet
+```{r rf_apply}
+finalPreds <- predict(modelRF, newdata = clean_validateSet)
+finalPreds
+```
