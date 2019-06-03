@@ -126,7 +126,7 @@ predictGBM <- predict(modelGBM, newdata = clean_testSet)
 conmatGBM <- confusionMatrix(predictGBM, clean_testSet$classe)
 conmatGBM
 ```
-Accuracy of predictions on testSet is ~98.7%  
+Accuracy of predictions on testSet is ~98.6%  
 
 ### Model 2: rf - Random Forest  
 (1) generate rf model from clean_trainSet  
@@ -140,7 +140,7 @@ modelRF <- train(classe ~ ., method = "rf", data = clean_trainSet,
 modelRF$finalModel
 print(modelRF)
 ```
-Estimated error rate is 0.18% and accuracy is reported as ~99.8%. That is quite high and might indicate overfitting to the training data. We'll see if we get close to this accuracy rate with the predictions on the test set.  
+Estimated error rate is 0.20% and accuracy is reported as ~99.8%. That is quite high and might indicate overfitting to the training data. We'll see if we get close to this accuracy rate with the predictions on the test set.  
 
 (3) predict classe of clean_testSet using modelRF  
 ```{r mp_rf_step3}
@@ -151,7 +151,7 @@ predictRF <- predict(modelRF, newdata = clean_testSet)
 conmatRF <- confusionMatrix(predictRF, clean_testSet$classe)
 conmatRF
 ```
-Accuracy of predictions on testSet is 99.8%. We'll use modelRF to predict the performance of the 20 test exercises for the final quiz. 
+Accuracy of predictions on testSet is 99.7%. We'll use modelRF to predict the performance of the 20 test exercises for the final quiz. 
 
 (5) Stop parallel processing  
 ```{r mp_rf_step5}
